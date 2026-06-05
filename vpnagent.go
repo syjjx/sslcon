@@ -4,18 +4,21 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/kardianos/service"
 	"sslcon/base"
 	"sslcon/rpc"
 	"sslcon/svc"
+
+	"github.com/kardianos/service"
 )
 
 func main() {
-	// fmt.Println("os.Args: ", len(os.Args))
+	log.SetFlags(log.Lshortfile | log.LstdFlags)
+	fmt.Println("os.Args: ", len(os.Args))
 	if len(os.Args) < 2 {
 		if service.Interactive() {
 			base.Setup()

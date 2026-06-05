@@ -11,8 +11,9 @@ import (
 	"time"
 	_ "unsafe"
 
+	"sslcon/wintun"
+
 	"golang.org/x/sys/windows"
-	"golang.zx2c4.com/wintun"
 )
 
 const (
@@ -43,7 +44,7 @@ type NativeTun struct {
 }
 
 var (
-	WintunTunnelType          = "TLSLink Secure"
+	WintunTunnelType          = "AnyLink Secure"
 	WintunStaticRequestedGUID = &windows.GUID{
 		0x0000000,
 		0xFFFF,

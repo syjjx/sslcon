@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"runtime/debug"
+
+	"sslcon/auth"
+	"sslcon/base"
+	"sslcon/session"
 
 	"github.com/gorilla/websocket"
 	"github.com/sourcegraph/jsonrpc2"
 	ws "github.com/sourcegraph/jsonrpc2/websocket"
-	"sslcon/auth"
-	"sslcon/base"
-	"sslcon/session"
 )
 
 const (
@@ -39,11 +41,13 @@ func Setup() {
 	go func() {
 		http.HandleFunc("/rpc", rpc)
 		// 无法启动则退出服务或应用，监听本地不需要有效物理网卡
+		log.Println("rpc server start :6210")
 		base.Fatal(http.ListenAndServe(":6210", nil))
 	}()
 }
 
 func rpc(resp http.ResponseWriter, req *http.Request) {
+	base.Debug("rpc request:", req)
 	up := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			return true
@@ -105,6 +109,7 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 		jError := jsonrpc2.Error{Code: 1, Message: disconnectedStr}
 		_ = conn.ReplyWithError(ctx, req.ID, &jError)
 	case CONNECT:
+		base.Debug("CONNECT")
 		// 启动时未连接，其它 UI 连接后再次调用
 		if session.Sess.CSess != nil {
 			_ = conn.Reply(ctx, req.ID, connectedStr)
@@ -129,6 +134,7 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 		_ = conn.Reply(ctx, req.ID, connectedStr)
 		go monitor()
 	case RECONNECT:
+		base.Debug("RECONNECT")
 		// UI 未检测到活动网络发生变化或者网络变化后已经推送接口信息
 		if session.Sess.CSess != nil {
 			_ = conn.Reply(ctx, req.ID, connectedStr)
@@ -145,6 +151,7 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 		_ = conn.Reply(ctx, req.ID, connectedStr)
 		go monitor()
 	case DISCONNECT:
+		base.Debug("DISCONNECT")
 		if session.Sess.CSess != nil {
 			DisConnect()
 		} else {
@@ -153,6 +160,7 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 		}
 	case CONFIG:
 		// 初始化配置
+		log.Println("CONFIG")
 		err := json.Unmarshal(*req.Params, &base.Cfg)
 		if err != nil {
 			jError := jsonrpc2.Error{Code: 1, Message: err.Error()}
@@ -161,8 +169,9 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 		}
 		_ = conn.Reply(ctx, req.ID, "ready to connect")
 		// 每次重启客户端或者配置更改，重置 logger
-		base.InitLog()
+		// base.InitLog()
 	case INTERFACE:
+		base.Debug("INTERFACE")
 		err := json.Unmarshal(*req.Params, base.LocalInterface)
 		if err != nil {
 			jError := jsonrpc2.Error{Code: 1, Message: err.Error()}
