@@ -168,8 +168,8 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 			return
 		}
 		_ = conn.Reply(ctx, req.ID, "ready to connect")
-		// 每次重启客户端或者配置更改，重置 logger
-		// base.InitLog()
+		// 每次重启客户端或者配置更改，重置 logger（按 log_path/log_level 写日志文件）
+		base.InitLog()
 	case INTERFACE:
 		base.Debug("INTERFACE")
 		err := json.Unmarshal(*req.Params, base.LocalInterface)
