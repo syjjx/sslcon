@@ -14,6 +14,7 @@ Currently the following servers are supported,
 
 - [AnyLink](https://github.com/bjdgyc/anylink)
 - [OpenConnect VPN server](https://gitlab.com/openconnect/ocserv)
+- [Cisco AnyConnect / ASA / FTD](https://www.cisco.com/site/us/en/products/security/secure-client/index.html)
 
 ## CLI
 
@@ -63,6 +64,17 @@ the installed service on OpenWrt
 ./sslcon connect -s test.com -u vpn -g default -k key
 ```
 
+### Cisco AnyConnect / ASA notes
+
+- The server may publish a group list during authentication; use the `-g` flag
+  to select the tunnel group, e.g. `./sslcon connect -s vpn.example.com -u user -g RA`.
+  A wrong or missing group results in `Login failed`.
+- The client reports itself as `AnyConnect <version>` (default `4.10.07062`),
+  overridable with the `agent_name` / `agent_version` config fields.
+- Older ASA versions only support DTLS 1.0, which this client does not implement;
+  set `no_dtls: true` in the config to keep a pure TLS tunnel in that case.
+- Debug logs (`-l Debug`) print the full XML auth exchange; the password is masked.
+
 ### disconnect
 
 ```
@@ -99,7 +111,11 @@ ws://127.0.0.1:6210/rpc
   "method": "config",
   "params": {
     "log_level": "Debug",
-    "log_path": ""
+    "log_path": "",
+    "skip_verify": true,
+    "no_dtls": false,
+    "agent_name": "AnyConnect",
+    "agent_version": "4.10.07062"
   },
   "id": 1
 }
