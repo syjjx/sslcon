@@ -31,6 +31,7 @@ Available Commands:
   connect     Connect to the VPN server
   disconnect  Disconnect from the VPN server
   status      Get VPN connection information
+  version     Print version information
 
 Flags:
   -h, --help   help for sslcon
@@ -93,6 +94,20 @@ OpenWrt 服务管理：
 
 ```
 ./sslcon status
+```
+
+### 版本
+
+```bash
+./sslcon version
+```
+
+显示客户端自身版本，并查询运行中 vpnagent 的版本（通过 RPC VERSION 接口），用于判断是否需要更新。
+
+构建时可用 ldflags 注入版本与 commit：
+
+```bash
+go build -ldflags "-X sslcon/base.Version=2.1.0 -X sslcon/base.Commit=$(git rev-parse --short HEAD)" -o sslcon sslcon.go
 ```
 
 ## API

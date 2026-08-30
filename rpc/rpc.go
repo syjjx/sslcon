@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"runtime"
 	"runtime/debug"
 	"time"
 
@@ -29,6 +30,7 @@ const (
 	INTERFACE
 	ABORT
 	STAT
+	VERSION
 )
 
 var (
@@ -46,6 +48,14 @@ type statReply struct {
 	CompressStat    *session.CompressStat `json:"compress_stat"`
 	CSTPCompression proto.Compression     `json:"cstp_compression"`
 	DTLSCompression proto.Compression     `json:"dtls_compression"`
+}
+
+// versionReply VERSION 接口返回：运行中的 vpnagent 构建信息
+type versionReply struct {
+	Version      string `json:"version"`       // sslcon 构建版本
+	Commit       string `json:"commit"`        // git commit（可空）
+	AgentVersion string `json:"agent_version"` // 上报给服务端的 AnyConnect 客户端版本
+	GoVersion    string `json:"go_version"`    // 编译所用 Go 版本
 }
 
 type handler struct{}
@@ -112,6 +122,14 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 		}
 		jError := jsonrpc2.Error{Code: 1, Message: disconnectedStr}
 		_ = conn.ReplyWithError(ctx, req.ID, &jError)
+	case VERSION:
+		// 不依赖连接状态，随时可查：用于判断运行中的 vpnagent 是否需要更新
+		_ = conn.Reply(ctx, req.ID, versionReply{
+			Version:      base.Version,
+			Commit:       base.Commit,
+			AgentVersion: base.Cfg.AgentVersion,
+			GoVersion:    runtime.Version(),
+		})
 	case STATUS:
 		// 未连接之前不应该调用这里
 		if session.Sess.CSess != nil {

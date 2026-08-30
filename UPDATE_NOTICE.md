@@ -26,6 +26,13 @@ go build -o sslcon sslcon.go
 go build -o vpnagent vpnagent.go
 ```
 
+- 推荐带上版本信息（`sslcon version` / RPC VERSION 接口可查，用于判断 vpnagent 是否需要更新）：
+
+```bash
+go build -ldflags "-X sslcon/base.Version=2.1.0 -X sslcon/base.Commit=$(git rev-parse --short HEAD)" -o sslcon sslcon.go
+go build -ldflags "-X sslcon/base.Version=2.1.0 -X sslcon/base.Commit=$(git rev-parse --short HEAD)" -o vpnagent vpnagent.go
+```
+
 - 可选：`go test ./...` 验证单元测试（含 LZS 黄金向量、压缩往返、会话解析等）
 
 ## 平台说明
