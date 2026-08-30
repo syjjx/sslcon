@@ -178,6 +178,25 @@ ws://127.0.0.1:6210/rpc
 }
 ```
 
+返回流量统计、压缩统计与压缩协商状态：
+
+```json
+{
+  "bytesSent": 69253,
+  "bytesReceived": 1720172,
+  "compress_stat": {
+    "send_original": 69253,
+    "send_wire": 68586,
+    "recv_wire": 1720172,
+    "recv_original": 1721833
+  },
+  "cstp_compression": "lzs",
+  "dtls_compression": "none"
+}
+```
+
+压缩率 = `1 - wire/original`；未协商压缩时 `compress_stat` 为 `null`。
+
 ## 建议
 
 > 除非有不得不用的理由，建议远离 Electron

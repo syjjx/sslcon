@@ -12,6 +12,7 @@ import (
 	"go.uber.org/atomic"
 	"sslcon/auth"
 	"sslcon/base"
+	"sslcon/proto"
 	"sslcon/session"
 
 	"github.com/gorilla/websocket"
@@ -37,6 +38,15 @@ var (
 	disconnectedStr string
 	autoReconnecting atomic.Bool // 自动重连进行中标志
 )
+
+// statReply STAT 接口的返回：原有流量统计 + 压缩统计 + 压缩协商状态
+type statReply struct {
+	BytesSent       uint64                `json:"bytesSent"`
+	BytesReceived   uint64                `json:"bytesReceived"`
+	CompressStat    *session.CompressStat `json:"compress_stat"`
+	CSTPCompression proto.Compression     `json:"cstp_compression"`
+	DTLSCompression proto.Compression     `json:"dtls_compression"`
+}
 
 type handler struct{}
 
@@ -90,7 +100,14 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 	case STAT:
 		// 未连接之前不应该调用这里
 		if session.Sess.CSess != nil {
-			_ = conn.Reply(ctx, req.ID, session.Sess.CSess.Stat)
+			cSess := session.Sess.CSess
+			_ = conn.Reply(ctx, req.ID, statReply{
+				BytesSent:       cSess.Stat.BytesSent,
+				BytesReceived:   cSess.Stat.BytesReceived,
+				CompressStat:    cSess.CompressStat,
+				CSTPCompression: cSess.CSTPCompression,
+				DTLSCompression: cSess.DTLSCompression,
+			})
 			return
 		}
 		jError := jsonrpc2.Error{Code: 1, Message: disconnectedStr}
