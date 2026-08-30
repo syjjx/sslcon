@@ -7,7 +7,9 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"time"
 
+	"go.uber.org/atomic"
 	"sslcon/auth"
 	"sslcon/base"
 	"sslcon/session"
@@ -33,6 +35,7 @@ var (
 	rpcHandler      = handler{}
 	connectedStr    string
 	disconnectedStr string
+	autoReconnecting atomic.Bool // 自动重连进行中标志
 )
 
 type handler struct{}
@@ -110,6 +113,11 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 		_ = conn.ReplyWithError(ctx, req.ID, &jError)
 	case CONNECT:
 		base.Debug("CONNECT")
+		if autoReconnecting.Load() {
+			jError := jsonrpc2.Error{Code: 1, Message: "auto reconnecting, please wait"}
+			_ = conn.ReplyWithError(ctx, req.ID, &jError)
+			return
+		}
 		// 启动时未连接，其它 UI 连接后再次调用
 		if session.Sess.CSess != nil {
 			_ = conn.Reply(ctx, req.ID, connectedStr)
@@ -198,4 +206,59 @@ func monitor() {
 			_ = conn.Reply(ctx, jsonrpc2.ID{Num: ABORT, IsString: false}, disconnectedStr)
 		}
 	}
+	// 异常断开（非用户主动）且开启自动重连时，指数退避重连
+	if !session.Sess.ActiveClose && base.Cfg.AutoReconnect {
+		startAutoReconnect()
+	}
+}
+
+// startAutoReconnect 指数退避自动重连：1s 起，翻倍至 60s 封顶，
+// 直到重连成功或用户主动断开（ActiveClose）
+func startAutoReconnect() {
+	if !autoReconnecting.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer autoReconnecting.Store(false)
+		delay := 1 * time.Second
+		for {
+			if session.Sess.ActiveClose {
+				return
+			}
+			base.Info("auto reconnect in", delay)
+			time.Sleep(delay)
+			if session.Sess.ActiveClose {
+				return
+			}
+			base.Info("auto reconnect attempt")
+			if err := reconnectOnce(); err != nil {
+				base.Error("auto reconnect failed:", err)
+				delay *= 2
+				if delay > 60*time.Second {
+					delay = 60 * time.Second
+				}
+				continue
+			}
+			// 重连成功的瞬间用户可能已请求断开
+			if session.Sess.ActiveClose {
+				DisConnect()
+				return
+			}
+			base.Info("auto reconnect succeeded")
+			connectedStr = "connected to " + auth.Prof.Host
+			go monitor()
+			return
+		}
+	}()
+}
+
+// reconnectOnce 完整重连：重新认证 + 建立隧道（复用已填充的 Profile）
+func reconnectOnce() error {
+	if err := auth.InitAuth(); err != nil {
+		return err
+	}
+	if err := auth.PasswordAuth(); err != nil {
+		return err
+	}
+	return SetupTunnel(true)
 }

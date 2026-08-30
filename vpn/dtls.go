@@ -93,6 +93,9 @@ func dtlsChannel(cSess *session.ConnSession) {
 
 	go payloadOutDTLSToServer(conn, dSess, cSess)
 
+	// 解压缓冲：解压后的包可能大于协商 MTU，预留 16KB
+	decompressBuf := make([]byte, 16384)
+
 	// Step 21 serverToPayloadIn
 	// 读取服务器返回的数据，调整格式，放入 cSess.PayloadIn，不再用子协程是为了能够退出 dtlsChannel 协程
 	for {
@@ -134,6 +137,19 @@ func dtlsChannel(cSess *session.ConnSession) {
 			case <-dSess.CloseChan:
 				return
 			}
+		case 0x08: // COMPRESSED DATA
+			// base.Debug("dtls receive COMPRESSED DATA")
+			n, derr := proto.DecompressData(cSess.DTLSCompression, pl.Data[1:bytesReceived], decompressBuf)
+			if derr != nil {
+				base.Error("dtls decompress error:", derr)
+				return
+			}
+			pl.Data = append(pl.Data[:0], decompressBuf[:n]...)
+			select {
+			case cSess.PayloadIn <- pl:
+			case <-dSess.CloseChan:
+				return
+			}
 		}
 		cSess.Stat.BytesReceived += uint64(bytesReceived)
 	}
@@ -152,6 +168,8 @@ func payloadOutDTLSToServer(conn *dtls.Conn, dSess *session.DtlsSession, cSess *
 		bytesSent int
 		pl        *proto.Payload
 	)
+	// 压缩缓冲：2048*9/8 最坏情况约 2304，预留 4096
+	compressBuf := make([]byte, 4096)
 
 	for {
 		select {
@@ -164,12 +182,25 @@ func payloadOutDTLSToServer(conn *dtls.Conn, dSess *session.DtlsSession, cSess *
 		if pl.Type == 0x00 {
 			// 获取数据长度
 			l := len(pl.Data)
+			compressed := false
+			// 协商了压缩则尝试压缩（压缩后更大则发原始数据，接收端两者都支持）
+			if cSess.DTLSCompression != proto.CompNone {
+				if n, cerr := proto.CompressData(cSess.DTLSCompression, pl.Data, compressBuf); cerr == nil && n < l {
+					pl.Data = append(pl.Data[:0], compressBuf[:n]...)
+					l = n
+					compressed = true
+				}
+			}
 			// 先扩容 +1
 			pl.Data = pl.Data[:l+1]
 			// 数据后移
 			copy(pl.Data[1:], pl.Data)
-			// 添加头信息
-			pl.Data[0] = pl.Type
+			// 添加头信息（0x08 压缩数据）
+			if compressed {
+				pl.Data[0] = 0x08
+			} else {
+				pl.Data[0] = pl.Type
+			}
 		} else {
 			// 设置头类型
 			pl.Data = append(pl.Data[:0], pl.Type)

@@ -39,6 +39,12 @@ func initTunnel() {
 	reqHeaders["X-CSTP-Hostname"] = auth.Prof.ComputerName       // 本机主机名
 	reqHeaders["X-CSTP-Local-VPNAddress-IP4"] = base.LocalInterface.Ip4
 
+	// 压缩能力协商（与 openconnect append_compr_types 一致，deflate 暂未实现故不广告）
+	if base.Cfg.Compression {
+		reqHeaders["X-CSTP-Accept-Encoding"] = "oc-lz4,lzs"
+		reqHeaders["X-DTLS-Accept-Encoding"] = "oc-lz4,lzs"
+	}
+
 	// Legacy Establishment of Secondary UDP Channel https://datatracker.ietf.org/doc/html/draft-mavrogiannopoulos-openconnect-02#section-2.1.5.1
 	// worker-vpn.c WSPCONFIG(ws)->udp_port != 0 && req->master_secret_set != 0 否则 disabling UDP (DTLS) connection
 	// 如果开启 dtls_psk（默认开启，见配置说明） 且 CipherSuite 包含 PSK-NEGOTIATE（仅限ocserv），worker-http.c 自动设置 req->master_secret_set = 1
@@ -65,6 +71,11 @@ func SetupTunnel() error {
 	}
 
 	// 发送 CONNECT 请求
+	if base.Cfg.LogLevel == "Debug" {
+		var rb bytes.Buffer
+		_ = req.Header.Write(&rb)
+		base.Debug("CONNECT request headers:\n" + rb.String())
+	}
 	err := req.Write(auth.Conn)
 	if err != nil {
 		auth.Conn.Close()
@@ -126,6 +137,7 @@ func SetupTunnel() error {
 
 	cSess.DPDTimer()
 	cSess.ReadDeadTimer()
+	cSess.ExpiryTimer()
 
 	return err
 }

@@ -29,6 +29,9 @@ func tlsChannel(conn *tls.Conn, bufR *bufio.Reader, cSess *session.ConnSession, 
 
 	go payloadOutTLSToServer(conn, cSess)
 
+	// 解压缓冲：解压后的包可能大于协商 MTU，预留 16KB
+	decompressBuf := make([]byte, 16384)
+
 	// Step 21 serverToPayloadIn
 	// 读取服务器返回的数据，调整格式，放入 cSess.PayloadIn
 	for {
@@ -62,6 +65,21 @@ func tlsChannel(conn *tls.Conn, bufR *bufio.Reader, cSess *session.ConnSession, 
 			case <-cSess.CloseChan:
 				return
 			}
+		case 0x08: // COMPRESSED DATA
+			// base.Debug("tls receive COMPRESSED DATA")
+			dataLen = binary.BigEndian.Uint16(pl.Data[4:6])
+			n, derr := proto.DecompressData(cSess.CSTPCompression, pl.Data[8:8+dataLen], decompressBuf)
+			if derr != nil {
+				base.Error("tls decompress error:", derr)
+				return
+			}
+			pl.Data = append(pl.Data[:0], decompressBuf[:n]...)
+
+			select {
+			case cSess.PayloadIn <- pl:
+			case <-cSess.CloseChan:
+				return
+			}
 		case 0x04:
 			base.Debug("tls receive DPD-RESP")
 		case 0x03: // DPD-REQ
@@ -89,6 +107,8 @@ func payloadOutTLSToServer(conn *tls.Conn, cSess *session.ConnSession) {
 		bytesSent int
 		pl        *proto.Payload
 	)
+	// 压缩缓冲：2048*9/8 最坏情况约 2304，预留 4096
+	compressBuf := make([]byte, 4096)
 
 	for {
 		select {
@@ -101,14 +121,26 @@ func payloadOutTLSToServer(conn *tls.Conn, cSess *session.ConnSession) {
 		if pl.Type == 0x00 {
 			// 获取数据长度
 			l := len(pl.Data)
+			compressed := false
+			// 协商了压缩则尝试压缩（压缩后更大则发原始数据，接收端两者都支持）
+			if cSess.CSTPCompression != proto.CompNone {
+				if n, cerr := proto.CompressData(cSess.CSTPCompression, pl.Data, compressBuf); cerr == nil && n < l {
+					pl.Data = append(pl.Data[:0], compressBuf[:n]...)
+					l = n
+					compressed = true
+				}
+			}
 			// 先扩容 +8
 			pl.Data = pl.Data[:l+8]
 			// 数据后移
 			copy(pl.Data[8:], pl.Data)
 			// 添加头信息
 			copy(pl.Data[:8], proto.Header)
-			// 更新头长度
+			// 更新头长度与类型（0x08 压缩数据）
 			binary.BigEndian.PutUint16(pl.Data[4:6], uint16(l))
+			if compressed {
+				pl.Data[6] = 0x08
+			}
 		} else {
 			pl.Data = append(pl.Data[:0], proto.Header...)
 			// 设置头类型

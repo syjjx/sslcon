@@ -64,6 +64,15 @@ type ConnSession struct {
 	DTLSKeepaliveTime int
 	DTLSId            string `json:"-"` // used by the server to associate the DTLS channel with the CSTP channel
 	DTLSCipherSuite   string
+
+	// 压缩协商（X-CSTP-Content-Encoding / X-DTLS-Content-Encoding）
+	CSTPCompression  proto.Compression `json:"cstp_compression"`
+	DTLSCompression  proto.Compression `json:"dtls_compression"`
+
+	// 会话超时/租期（X-CSTP-Idle-Timeout / Lease-Duration / Session-Timeout）
+	IdleTimeout    int       `json:"idle_timeout"`
+	AuthExpiration time.Time `json:"auth_expiration"` // 会话到期时间（三者最小值+连接时刻）
+
 	Stat              *stat
 
 	closeOnce      sync.Once           `json:"-"`
@@ -100,6 +109,12 @@ func (m *SyncMap) MarshalJSON() ([]byte, error) {
 		return true
 	})
 	return json.Marshal(out)
+}
+
+// atoiSafe 忽略解析错误，服务器可能下发 "none" 等非数值
+func atoiSafe(s string) int {
+	v, _ := strconv.Atoi(s)
+	return v
 }
 
 func (sess *Session) NewConnSession(header *http.Header) *ConnSession {
@@ -151,6 +166,27 @@ func (sess *Session) NewConnSession(header *http.Header) *ConnSession {
 		cSess.DTLSCipherSuite = "Unknown"
 	} else {
 		cSess.DTLSCipherSuite = header.Get("X-DTLS12-CipherSuite") // 连接前后格式不同
+	}
+
+	// 压缩协商（openconnect cstp.c 解析 X-*-Content-Encoding 一致）
+	cSess.CSTPCompression = proto.ParseCompression(header.Get("X-CSTP-Content-Encoding"))
+	cSess.DTLSCompression = proto.ParseCompression(header.Get("X-DTLS-Content-Encoding"))
+
+	// 会话超时/租期：与 openconnect 一致，取 Lease-Duration / Session-Timeout /
+	// Session-Timeout-Remaining 中最小非零值作为到期时间；值可能为 "none"
+	cSess.IdleTimeout, _ = strconv.Atoi(header.Get("X-CSTP-Idle-Timeout"))
+	expiry := 0
+	for _, v := range []int{
+		atoiSafe(header.Get("X-CSTP-Lease-Duration")),
+		atoiSafe(header.Get("X-CSTP-Session-Timeout")),
+		atoiSafe(header.Get("X-CSTP-Session-Timeout-Remaining")),
+	} {
+		if v > 0 && (expiry == 0 || v < expiry) {
+			expiry = v
+		}
+	}
+	if expiry > 0 {
+		cSess.AuthExpiration = time.Now().Add(time.Duration(expiry) * time.Second)
 	}
 
 	postAuth := header.Get("X-CSTP-Post-Auth-XML")
@@ -212,6 +248,36 @@ func (cSess *ConnSession) DPDTimer() {
 				}
 			case <-cSess.CloseChan:
 				ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+// ExpiryTimer 监控会话到期时间（X-CSTP-Lease-Duration / Session-Timeout 的最小值），
+// 到期前 60 秒与到期时输出告警日志。断开后的自动重连由 rpc 层处理。
+func (cSess *ConnSession) ExpiryTimer() {
+	if cSess.AuthExpiration.IsZero() {
+		return
+	}
+	go func() {
+		defer func() {
+			base.Info("session expiry timer exit")
+		}()
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				remaining := time.Until(cSess.AuthExpiration)
+				switch {
+				case remaining <= 0:
+					base.Warn("session expired at", cSess.AuthExpiration.Format(time.RFC3339))
+					return
+				case remaining <= 60*time.Second:
+					base.Warn("session will expire in", remaining.Round(time.Second))
+				}
+			case <-cSess.CloseChan:
 				return
 			}
 		}

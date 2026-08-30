@@ -116,11 +116,20 @@ ws://127.0.0.1:6210/rpc
     "skip_verify": true,
     "no_dtls": false,
     "agent_name": "AnyConnect",
-    "agent_version": "4.10.07062"
+    "agent_version": "4.10.07062",
+    "compression": true,
+    "auto_reconnect": true
   },
   "id": 1
 }
 ```
+
+配置项说明：
+
+- `compression`：是否协商数据压缩（oc-lz4 / lzs，由服务端决定是否启用，默认开启）
+- `auto_reconnect`：异常断线时自动重连（1s 起指数退避至 60s，默认开启）
+- `no_dtls`：禁用 DTLS，仅使用 TLS 隧道（老 ASA 只支持 DTLS 1.0 时使用）
+- `skip_verify`：跳过 TLS 证书校验（默认 true，生产环境建议配合证书指纹校验）
 
 ### connect
 

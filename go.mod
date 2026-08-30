@@ -24,6 +24,7 @@ require (
 require (
 	github.com/elastic/go-windows v1.0.2 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.21 // indirect
 	github.com/pion/logging v0.2.4 // indirect
 	github.com/pion/transport/v4 v4.0.1 // indirect
 	github.com/prometheus/procfs v0.20.1 // indirect

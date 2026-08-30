@@ -13,6 +13,8 @@ type ClientConfig struct {
 	NoDTLS             bool   `json:"no_dtls"`
 	AgentName          string `json:"agent_name"`
 	AgentVersion       string `json:"agent_version"`
+	Compression        bool   `json:"compression"`   // 是否协商数据压缩（oc-lz4/lzs）
+	AutoReconnect      bool   `json:"auto_reconnect"` // 异常断线自动重连（指数退避）
 }
 
 // Interface 应该由外部接口设置
@@ -29,4 +31,6 @@ func initCfg() {
 	Cfg.CiscoCompat = true
 	Cfg.AgentName = ""
 	Cfg.AgentVersion = "4.10.07062"
+	Cfg.Compression = true
+	Cfg.AutoReconnect = true
 }
