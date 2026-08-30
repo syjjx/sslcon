@@ -20,7 +20,11 @@ var (
 )
 
 func init() {
-	reqHeaders["X-CSTP-VPNAddress-Type"] = "IPv4"
+	// 与 openconnect cstp.c 对齐的 CONNECT 请求头
+	reqHeaders["X-CSTP-Version"] = "1"
+	reqHeaders["X-CSTP-Address-Type"] = "IPv4"
+	// 某些服务器只允许看到标准版权声明（shibboleth）的客户端连接
+	reqHeaders["X-CSTP-Protocol"] = "Copyright (c) 2004 Cisco Systems, Inc."
 	// Payload + 8 + 加密扩展位 + TCP或UDP头 + IP头 最好小于 1500，这里参考 AnyConnect 设置
 	reqHeaders["X-CSTP-MTU"] = "1399"
 	reqHeaders["X-CSTP-Base-MTU"] = "1399"
@@ -32,6 +36,7 @@ func init() {
 func initTunnel() {
 	// https://datatracker.ietf.org/doc/html/draft-mavrogiannopoulos-openconnect-03#section-2.1.3
 	reqHeaders["Cookie"] = "webvpn=" + session.Sess.SessionToken // 无论什么服务端都需要通过 Cookie 发送 Session
+	reqHeaders["X-CSTP-Hostname"] = auth.Prof.ComputerName       // 本机主机名
 	reqHeaders["X-CSTP-Local-VPNAddress-IP4"] = base.LocalInterface.Ip4
 
 	// Legacy Establishment of Secondary UDP Channel https://datatracker.ietf.org/doc/html/draft-mavrogiannopoulos-openconnect-02#section-2.1.5.1
