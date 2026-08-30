@@ -83,7 +83,7 @@ type ConnSession struct {
 	AuthExpiration time.Time `json:"auth_expiration"` // 会话到期时间（三者最小值+连接时刻）
 
 	Stat              *stat
-	CompressStat      *CompressStat // 压缩统计，未协商压缩时为 nil
+	CompressStat      *CompressStat `json:"compress_stat"` // 压缩统计，未协商压缩时为 null
 
 	closeOnce      sync.Once           `json:"-"`
 	CloseChan      chan struct{}       `json:"-"`
