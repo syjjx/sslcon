@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/dtls/v3"
@@ -131,6 +132,11 @@ func dtlsChannel(cSess *session.ConnSession) {
 		case 0x04:
 			base.Debug("dtls receive DPD-RESP")
 		case 0x00: // DATA
+			wire := int64(bytesReceived - 1)
+			if cSess.DTLSCompression != proto.CompNone {
+				atomic.AddInt64(&cSess.CompressStat.RecvWire, wire)
+				atomic.AddInt64(&cSess.CompressStat.RecvOriginal, wire)
+			}
 			pl.Data = append(pl.Data[:0], pl.Data[1:bytesReceived]...)
 			select {
 			case cSess.PayloadIn <- pl:
@@ -143,6 +149,10 @@ func dtlsChannel(cSess *session.ConnSession) {
 			if derr != nil {
 				base.Error("dtls decompress error:", derr)
 				return
+			}
+			if cSess.DTLSCompression != proto.CompNone {
+				atomic.AddInt64(&cSess.CompressStat.RecvWire, int64(bytesReceived-1))
+				atomic.AddInt64(&cSess.CompressStat.RecvOriginal, int64(n))
 			}
 			pl.Data = append(pl.Data[:0], decompressBuf[:n]...)
 			select {
@@ -185,11 +195,15 @@ func payloadOutDTLSToServer(conn *dtls.Conn, dSess *session.DtlsSession, cSess *
 			compressed := false
 			// 协商了压缩则尝试压缩（压缩后更大则发原始数据，接收端两者都支持）
 			if cSess.DTLSCompression != proto.CompNone {
+				original := l
 				if n, cerr := proto.CompressData(cSess.DTLSCompression, pl.Data, compressBuf); cerr == nil && n < l {
 					pl.Data = append(pl.Data[:0], compressBuf[:n]...)
 					l = n
 					compressed = true
 				}
+				// 压缩统计（原子计数，开销可忽略）
+				atomic.AddInt64(&cSess.CompressStat.SendOriginal, int64(original))
+				atomic.AddInt64(&cSess.CompressStat.SendWire, int64(l))
 			}
 			// 先扩容 +1
 			pl.Data = pl.Data[:l+1]

@@ -37,6 +37,10 @@ func TestNewConnSessionParsing(t *testing.T) {
 	if cSess.DTLSCompression != proto.CompLZS {
 		t.Errorf("DTLSCompression = %v, want lzs", cSess.DTLSCompression)
 	}
+	// 协商了压缩时应创建统计结构
+	if cSess.CompressStat == nil {
+		t.Error("CompressStat 应为非 nil")
+	}
 	if cSess.IdleTimeout != 1800 {
 		t.Errorf("IdleTimeout = %d", cSess.IdleTimeout)
 	}
@@ -63,5 +67,8 @@ func TestNewConnSessionNoTimeout(t *testing.T) {
 	}
 	if cSess.CSTPCompression != proto.CompNone {
 		t.Errorf("CSTPCompression 应为 none，got %v", cSess.CSTPCompression)
+	}
+	if cSess.CompressStat != nil {
+		t.Error("未协商压缩时 CompressStat 应为 nil")
 	}
 }

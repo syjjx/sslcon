@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"sslcon/base"
@@ -55,6 +56,10 @@ func tlsChannel(conn *tls.Conn, bufR *bufio.Reader, cSess *session.ConnSession, 
 			// base.Debug("tls receive DATA")
 			// 获取数据长度
 			dataLen = binary.BigEndian.Uint16(pl.Data[4:6])
+			if cSess.CSTPCompression != proto.CompNone {
+				atomic.AddInt64(&cSess.CompressStat.RecvWire, int64(dataLen))
+				atomic.AddInt64(&cSess.CompressStat.RecvOriginal, int64(dataLen))
+			}
 			// 去除数据头
 			copy(pl.Data, pl.Data[8:8+dataLen])
 			// 更新切片长度
@@ -72,6 +77,10 @@ func tlsChannel(conn *tls.Conn, bufR *bufio.Reader, cSess *session.ConnSession, 
 			if derr != nil {
 				base.Error("tls decompress error:", derr)
 				return
+			}
+			if cSess.CSTPCompression != proto.CompNone {
+				atomic.AddInt64(&cSess.CompressStat.RecvWire, int64(dataLen))
+				atomic.AddInt64(&cSess.CompressStat.RecvOriginal, int64(n))
 			}
 			pl.Data = append(pl.Data[:0], decompressBuf[:n]...)
 
@@ -124,11 +133,15 @@ func payloadOutTLSToServer(conn *tls.Conn, cSess *session.ConnSession) {
 			compressed := false
 			// 协商了压缩则尝试压缩（压缩后更大则发原始数据，接收端两者都支持）
 			if cSess.CSTPCompression != proto.CompNone {
+				original := l
 				if n, cerr := proto.CompressData(cSess.CSTPCompression, pl.Data, compressBuf); cerr == nil && n < l {
 					pl.Data = append(pl.Data[:0], compressBuf[:n]...)
 					l = n
 					compressed = true
 				}
+				// 压缩统计（原子计数，开销可忽略）
+				atomic.AddInt64(&cSess.CompressStat.SendOriginal, int64(original))
+				atomic.AddInt64(&cSess.CompressStat.SendWire, int64(l))
 			}
 			// 先扩容 +8
 			pl.Data = pl.Data[:l+8]

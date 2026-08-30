@@ -35,6 +35,15 @@ type stat struct {
 	BytesReceived uint64 `json:"bytesReceived"`
 }
 
+// CompressStat 压缩统计（仅在协商压缩时累计，原子计数）。
+// 压缩率 = 1 - wire/original；original 为压缩前的原始载荷字节，wire 为压缩后实际线上字节。
+type CompressStat struct {
+	SendOriginal int64 `json:"send_original"` // 发送方向：压缩前载荷字节数
+	SendWire     int64 `json:"send_wire"`     // 发送方向：压缩后线上载荷字节数
+	RecvWire     int64 `json:"recv_wire"`     // 接收方向：线上收到的压缩载荷字节数
+	RecvOriginal int64 `json:"recv_original"` // 接收方向：解压后的载荷字节数
+}
+
 // ConnSession used for both TLS and DTLS
 type ConnSession struct {
 	Sess *Session `json:"-"`
@@ -74,6 +83,7 @@ type ConnSession struct {
 	AuthExpiration time.Time `json:"auth_expiration"` // 会话到期时间（三者最小值+连接时刻）
 
 	Stat              *stat
+	CompressStat      *CompressStat // 压缩统计，未协商压缩时为 nil
 
 	closeOnce      sync.Once           `json:"-"`
 	CloseChan      chan struct{}       `json:"-"`
@@ -168,9 +178,12 @@ func (sess *Session) NewConnSession(header *http.Header) *ConnSession {
 		cSess.DTLSCipherSuite = header.Get("X-DTLS12-CipherSuite") // 连接前后格式不同
 	}
 
-	// 压缩协商（openconnect cstp.c 解析 X-*-Content-Encoding 一致）
 	cSess.CSTPCompression = proto.ParseCompression(header.Get("X-CSTP-Content-Encoding"))
 	cSess.DTLSCompression = proto.ParseCompression(header.Get("X-DTLS-Content-Encoding"))
+	// 仅协商压缩时启用统计，status 中未压缩时为 null
+	if cSess.CSTPCompression != proto.CompNone || cSess.DTLSCompression != proto.CompNone {
+		cSess.CompressStat = &CompressStat{}
+	}
 
 	// 会话超时/租期：与 openconnect 一致，取 Lease-Duration / Session-Timeout /
 	// Session-Timeout-Remaining 中最小非零值作为到期时间；值可能为 "none"
