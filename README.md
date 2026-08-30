@@ -1,16 +1,16 @@
-> This repository is now in security-maintenance mode. Future development will continue at https://github.com/bjdgyc/sslcon
+> 本仓库目前处于安全维护模式，后续开发将在 https://github.com/bjdgyc/sslcon 继续进行
 
 ## sslcon
 
-This is a Golang implementation of the [OpenConnect VPN Protocol](https://datatracker.ietf.org/doc/html/draft-mavrogiannopoulos-openconnect-04) for client side development. 
+这是 [OpenConnect VPN 协议](https://datatracker.ietf.org/doc/html/draft-mavrogiannopoulos-openconnect-04) 的 Golang 客户端实现，供客户端侧开发使用。
 
-The released binaries contain a command line program(sslcon) and a VPN service agent(vpnagent), the latter of which should be run as a separate background service with root privileges, so that the front-end UI does not require an administrator authorization every time it starts. 
+发布的二进制包含一个命令行程序（sslcon）和一个 VPN 服务代理（vpnagent）。vpnagent 应以 root 权限作为独立的后台服务运行，这样前端 UI 每次启动时都不需要管理员授权。
 
-The API is exposed through the WebSocket and JSON-RPC 2.0 protocols, so developers can easily customize a graphical interface that meets their needs.
+API 通过 WebSocket 和 JSON-RPC 2.0 协议暴露，开发者可以方便地定制符合自己需求的图形界面。
 
-**[There](https://github.com/tlslink/anylink-client) is a GUI client example showing how to use this project.**
+**[这里](https://github.com/tlslink/anylink-client) 有一个 GUI 客户端示例，展示了如何使用本项目。**
 
-Currently the following servers are supported,
+目前支持以下服务器：
 
 - [AnyLink](https://github.com/bjdgyc/anylink)
 - [OpenConnect VPN server](https://gitlab.com/openconnect/ocserv)
@@ -20,8 +20,8 @@ Currently the following servers are supported,
 
 ```
 $ ./sslcon
-A CLI application that supports the OpenConnect SSL VPN protocol.
-For more information, please visit https://github.com/tlslink/sslcon
+支持 OpenConnect SSL VPN 协议的命令行应用。
+更多信息请访问 https://github.com/tlslink/sslcon
 
 Usage:
   sslcon [flags]
@@ -38,58 +38,59 @@ Flags:
 Use "sslcon [command] --help" for more information about a command.
 ```
 
-### install
+### 安装
 
 ```shell
 sudo ./vpnagent install
-# uninstall
+# 卸载
 sudo ./vpnagent uninstall
 ```
-the installed service on systemd linux
+
+Linux systemd 服务管理：
 
 ```
 sudo systemctl stop/start/restart sslcon.service
 sudo systemctl disable/enable sslcon.service
 ```
 
-the installed service on OpenWrt
+OpenWrt 服务管理：
 
 ```
 /etc/init.d/sslcon stop/start/restart/status
 ```
 
-### connect
+### 连接
 
 ```bash
 ./sslcon connect -s test.com -u vpn -g default -k key
 ```
 
-### Cisco AnyConnect / ASA notes
+### Cisco AnyConnect / ASA 使用说明
 
-- The server may publish a group list during authentication; use the `-g` flag
-  to select the tunnel group, e.g. `./sslcon connect -s vpn.example.com -u user -g RA`.
-  A wrong or missing group results in `Login failed`.
-- The client reports itself as `AnyConnect <version>` (default `4.10.07062`),
-  overridable with the `agent_name` / `agent_version` config fields.
-- Older ASA versions only support DTLS 1.0, which this client does not implement;
-  set `no_dtls: true` in the config to keep a pure TLS tunnel in that case.
-- Debug logs (`-l Debug`) print the full XML auth exchange; the password is masked.
+- 认证时服务器可能会下发用户组列表，需要用 `-g` 参数指定隧道组，例如
+  `./sslcon connect -s vpn.example.com -u user -g RA`。组不正确或缺失会导致
+  `Login failed`。
+- 客户端上报身份为 `AnyConnect <version>`（默认 `4.10.07062`），可通过配置项
+  `agent_name` / `agent_version` 覆盖。
+- 较老的 ASA 只支持 DTLS 1.0，本客户端未实现该版本；可设置 `no_dtls: true`
+  保持纯 TLS 隧道。
+- `-l Debug` 会输出完整的 XML 认证交互日志（密码已打码）。
 
-### disconnect
+### 断开
 
 ```
 ./sslcon disconnect
 ```
 
-### status
+### 状态
 
 ```
 ./sslcon status
 ```
 
-## APIs
+## API
 
-You can use any WebSocket tool to test the API.
+可以使用任意 WebSocket 工具测试 API。
 
 ws://127.0.0.1:6210/rpc
 
