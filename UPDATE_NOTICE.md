@@ -7,6 +7,10 @@ sslcon 项目已完成更新并推送到 GitHub（仓库地址：`https://github
 - **数据压缩**：协商 `X-CSTP-Accept-Encoding: oc-lz4,lzs`，压缩数据帧（类型 0x08）在 TLS/DTLS 通道收发。LZS 编解码为 openconnect `lzs.c` 的逐位移植（已用 C 实现黄金向量验证一致），LZ4 使用标准 block 格式。由服务端决定是否启用（配置项 `compression`，默认 true）。deflate 暂未实现。
 - **会话超时/租期处理**：解析 `X-CSTP-Idle-Timeout` / `X-CSTP-Lease-Duration` / `X-CSTP-Session-Timeout(-Remaining)`，status 暴露 `idle_timeout` / `auth_expiration`，到期前输出告警日志（配置项 `auto_reconnect` 开启时配合自动重连）。
 - **自动重连增强**：异常断线后指数退避自动重连（1s 起，翻倍至 60s 封顶），用户主动断开不触发（配置项 `auto_reconnect`，默认 true）。
+- **压缩统计与压缩状态（RPC 接口）**：
+  - `STATUS (id 0)` 完整连接信息中新增 `compress_stat`（`send_original` / `send_wire` / `recv_wire` / `recv_original`，压缩率 = `1 - wire/original`）与 `cstp_compression` / `dtls_compression`（协商算法，`none`/`lzs`/`oc-lz4`）
+  - `STAT (id 7)` 轻量轮询接口在原有 `bytesSent` / `bytesReceived` 基础上**追加** `compress_stat` 与 `cstp_compression` / `dtls_compression`（纯增量字段，旧客户端解析不受影响；未协商压缩时 `compress_stat` 为 `null`）
+  - 用途：GUI 流量图可直接展示压缩率与协商状态；实测参考——明文 HTTP/文本流量压缩率 30-70%，HTTPS/媒体流量约 0-3%（已加密无冗余），LZS/LZ4 的 CPU 开销相对隧道加密可忽略
 
 ## 任务
 
