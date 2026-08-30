@@ -523,6 +523,8 @@ func (r *routeSocketState) addDynamicRoutes(ips []string, throughTunnel bool) {
 	}
 	if err := r.pipelineLocked(routes); err != nil {
 		base.Error("add dynamic routes:", err)
+	} else if len(routes) > 0 {
+		base.Debug("dynamic routes added:", len(routes))
 	}
 }
 
@@ -619,37 +621,51 @@ func (r *routeSocketState) pipelineLocked(routes []darwinRoute) error {
 		requests = append(requests, routeRequest{seq: seq, route: route, data: data})
 	}
 
-	sent := 0
+	// 只跟踪真正写入内核的请求：跳过 EEXIST 的路由（如本机局域网路由已存在），
+	// 否则收集 ACK 时会一直等待一个永远不会到达的应答
+	written := make([]routeRequest, 0, len(requests))
 	for index, request := range requests {
 		if err := r.writeWithRetry(request.data); err != nil {
-			if sent > 0 {
-				results, collectErr := r.collectAcksLocked(requests[:sent])
-				r.rollbackSuccessfulAddsLocked(requests[:sent], results)
+			if request.route.typ == unix.RTM_ADD && errors.Is(err, unix.EEXIST) {
+				// 路由已存在（如本机局域网 192.168.199.0/24），无需重复添加，
+				// 也绝不能记入 installed，否则断开时会误删原有路由
+				base.Debug("route already exists, skip:", request.route.name)
+				continue
+			}
+			if len(written) > 0 {
+				results, collectErr := r.collectAcksLocked(written)
+				r.rollbackSuccessfulAddsLocked(written, results)
 				if collectErr != nil {
 					return fmt.Errorf("write route %d (%s): %w; collecting previously sent ACKs: %v", index, request.route.name, err, collectErr)
 				}
 			}
 			return fmt.Errorf("write route %d (%s): %w", index, request.route.name, err)
 		}
-		sent++
+		written = append(written, request)
 	}
 
-	results, err := r.collectAcksLocked(requests)
-	r.applyResultsLocked(requests, results)
+	results, err := r.collectAcksLocked(written)
+	r.applyResultsLocked(written, results)
 	if err != nil {
-		r.rollbackSuccessfulAddsLocked(requests, results)
+		r.rollbackSuccessfulAddsLocked(written, results)
 		return err
 	}
 	var firstRouteError error
-	for _, request := range requests {
-		if routeErr := results[request.seq]; routeErr != nil {
-			if firstRouteError == nil {
-				firstRouteError = fmt.Errorf("%s: %w", request.route.name, routeErr)
-			}
+	for _, request := range written {
+		routeErr := results[request.seq]
+		if routeErr == nil {
+			continue
+		}
+		// 内核也可能通过 ACK 报告 EEXIST，同样视为成功
+		if request.route.typ == unix.RTM_ADD && errors.Is(routeErr, unix.EEXIST) {
+			continue
+		}
+		if firstRouteError == nil {
+			firstRouteError = fmt.Errorf("%s: %w", request.route.name, routeErr)
 		}
 	}
 	if firstRouteError != nil {
-		r.rollbackSuccessfulAddsLocked(requests, results)
+		r.rollbackSuccessfulAddsLocked(written, results)
 		return firstRouteError
 	}
 	return nil
@@ -774,7 +790,8 @@ func (r *routeSocketState) collectAcksLocked(requests []routeRequest) (map[int32
 					if hdr.Errno == 0 {
 						results[hdr.Seq] = nil
 					} else {
-						results[hdr.Seq] = fmt.Errorf("kernel errno=%d (%s)", hdr.Errno, unix.Errno(hdr.Errno))
+						// %w 包装 errno，便于调用方用 errors.Is 识别 EEXIST 等场景
+						results[hdr.Seq] = fmt.Errorf("kernel errno=%d (%s): %w", hdr.Errno, unix.Errno(hdr.Errno), unix.Errno(hdr.Errno))
 					}
 				}
 			}
