@@ -1,7 +1,9 @@
 package session
 
 import (
+	"encoding/json"
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,9 +52,9 @@ type ConnSession struct {
 
 	DynamicSplitTunneling       bool
 	DynamicSplitIncludeDomains  []string
-	DynamicSplitIncludeResolved sync.Map // https://github.com/golang/go/issues/31136
+	DynamicSplitIncludeResolved SyncMap // https://github.com/golang/go/issues/31136
 	DynamicSplitExcludeDomains  []string
-	DynamicSplitExcludeResolved sync.Map
+	DynamicSplitExcludeResolved SyncMap
 
 	TLSCipherSuite    string
 	TLSDpdTime        int // https://datatracker.ietf.org/doc/html/rfc3706
@@ -81,6 +83,23 @@ type ConnSession struct {
 type DtlsSession struct {
 	closeOnce sync.Once
 	CloseChan chan struct{}
+}
+
+// SyncMap 包装 sync.Map 并提供 JSON 序列化能力：
+// sync.Map 没有导出字段，json.Marshal 只会输出 {}，导致 status 看不到已解析的域名映射
+type SyncMap struct {
+	sync.Map
+}
+
+func (m *SyncMap) MarshalJSON() ([]byte, error) {
+	out := make(map[string][]string)
+	m.Range(func(k, v interface{}) bool {
+		if ips, ok := v.([]string); ok {
+			out[fmt.Sprint(k)] = ips
+		}
+		return true
+	})
+	return json.Marshal(out)
 }
 
 func (sess *Session) NewConnSession(header *http.Header) *ConnSession {

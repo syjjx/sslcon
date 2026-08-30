@@ -166,7 +166,7 @@ func dynamicSplitRoutes(data []byte, cSess *session.ConnSession) {
 		dns, _ := dnsLayer.(*layers.DNS)
 
 		query := string(dns.Questions[0].Name)
-		// base.Debug("Query:", query)
+		base.Debug("dns sniff:", query, "ancount:", dns.ANCount)
 
 		if utils.InArrayGeneric(cSess.DynamicSplitIncludeDomains, query) {
 			// 分析流量后才知道请求的域名，即使已经设置路由，仍然需要分析流量，不可避免的 overhead
@@ -182,6 +182,7 @@ func dynamicSplitRoutes(data []byte, cSess *session.ConnSession) {
 				}
 				if len(answers) > 0 {
 					cSess.DynamicSplitIncludeResolved.Store(query, answers)
+					base.Debug("dynamic split include:", query, answers)
 					vpnc.DynamicAddIncludeRoutes(answers)
 				}
 			}
@@ -198,6 +199,7 @@ func dynamicSplitRoutes(data []byte, cSess *session.ConnSession) {
 				}
 				if len(answers) > 0 {
 					cSess.DynamicSplitExcludeResolved.Store(query, answers)
+					base.Debug("dynamic split exclude:", query, answers)
 					vpnc.DynamicAddExcludeRoutes(answers)
 				}
 			}
