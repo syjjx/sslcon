@@ -20,6 +20,9 @@ var (
 
 	logLevel string
 	logPath  string
+
+	noCompression bool
+	noReconnect   bool
 )
 
 var connect = &cobra.Command{
@@ -42,9 +45,15 @@ var connect = &cobra.Command{
 			}
 			// fmt.Println(host, username, password, group)
 			if password != "" {
-				params := make(map[string]string)
+				params := make(map[string]interface{})
 				params["log_level"] = logLevel
 				params["log_path"] = logPath
+				if noCompression {
+					params["compression"] = false
+				}
+				if noReconnect {
+					params["auto_reconnect"] = false
+				}
 
 				result := gson.New()
 				err := rpcCall("config", params, result, rpc.CONFIG)
@@ -85,4 +94,7 @@ func init() {
 
 	connect.Flags().StringVarP(&logLevel, "log_level", "l", "info", "Set the log level")
 	connect.Flags().StringVarP(&logPath, "log_path", "d", os.TempDir(), "Set the log directory")
+
+	connect.Flags().BoolVar(&noCompression, "no-compression", false, "Disable data compression negotiation")
+	connect.Flags().BoolVar(&noReconnect, "no-reconnect", false, "Disable auto reconnect")
 }

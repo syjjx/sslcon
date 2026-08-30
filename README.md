@@ -65,6 +65,13 @@ OpenWrt 服务管理：
 ./sslcon connect -s test.com -u vpn -g default -k key
 ```
 
+可选开关：
+
+```bash
+./sslcon connect -s vpn.example.com -u user -p pass -g RA --no-compression  # 禁用压缩协商
+./sslcon connect -s vpn.example.com -u user -p pass -g RA --no-reconnect    # 禁用自动重连
+```
+
 ### Cisco AnyConnect / ASA 使用说明
 
 - 认证时服务器可能会下发用户组列表，需要用 `-g` 参数指定隧道组，例如
