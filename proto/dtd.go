@@ -13,6 +13,7 @@ type DTD struct {
 	GroupAccess          string         `xml:"group-access"`                // 请求的地址
 	GroupSelect          string         `xml:"group-select"`                // 选择的组名
 	SessionToken         string         `xml:"session-token"`
+	Error                authError      `xml:"error"`                       // ASA 认证失败时 error 是 config-auth 的直接子元素，如 <error id="98"/>
 	Auth                 auth           `xml:"auth"`
 	DeviceId             deviceId       `xml:"device-id"`
 	Opaque               opaque         `xml:"opaque"`
@@ -35,6 +36,7 @@ type form struct {
 }
 
 type authError struct {
+	ID     string `xml:"id,attr"`
 	Param1 string `xml:"param1,attr"`
 	Value  string `xml:",chardata"`
 }

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"runtime"
 	"strings"
 
 	"github.com/pion/dtls/v3/pkg/protocol"
@@ -39,8 +38,11 @@ func SetCommonHeader(req *http.Request) {
 	if base.Cfg.CiscoCompat || base.Cfg.AgentName == "" {
 		base.Cfg.AgentName = "AnyConnect"
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("%s %s %s", base.Cfg.AgentName, FirstUpper(runtime.GOOS+"_"+runtime.GOARCH), base.Cfg.AgentVersion))
-	req.Header.Set("Content-Type", "application/xml")
+	// UA 格式与 openconnect 一致: "<agent> <version>"，如 "AnyConnect 4.10.07062"
+	// 不要附加平台令牌（如 Darwin_arm64），ASA 会做客户端类型校验
+	req.Header.Set("User-Agent", fmt.Sprintf("%s %s", base.Cfg.AgentName, base.Cfg.AgentVersion))
+	// 与 openconnect http.c 的请求头保持一致
+	req.Header.Set("Content-Type", "application/xml; charset=utf-8")
 }
 
 func IpMask2CIDR(ip, mask string) string {
