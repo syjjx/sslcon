@@ -40,10 +40,7 @@ func initTunnel() {
 	reqHeaders["X-CSTP-Local-VPNAddress-IP4"] = base.LocalInterface.Ip4
 
 	// 压缩能力协商（与 openconnect append_compr_types 一致，deflate 暂未实现故不广告）
-	if base.Cfg.Compression {
-		reqHeaders["X-CSTP-Accept-Encoding"] = "oc-lz4,lzs"
-		reqHeaders["X-DTLS-Accept-Encoding"] = "oc-lz4,lzs"
-	}
+	applyCompressionHeaders()
 
 	// Legacy Establishment of Secondary UDP Channel https://datatracker.ietf.org/doc/html/draft-mavrogiannopoulos-openconnect-02#section-2.1.5.1
 	// worker-vpn.c WSPCONFIG(ws)->udp_port != 0 && req->master_secret_set != 0 否则 disabling UDP (DTLS) connection
@@ -55,6 +52,21 @@ func initTunnel() {
 	// https://gitlab.com/openconnect/ocserv/-/blob/master/src/worker-http.c#L150
 	// https://github.com/openconnect/openconnect/blob/master/gnutls-dtls.c#L75
 	reqHeaders["X-DTLS12-CipherSuite"] = "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:AES128-GCM-SHA256"
+}
+
+// applyCompressionHeaders 按配置广告或撤销压缩能力。
+// 注意必须同时 delete 两个键：reqHeaders 是进程级 map（vpnagent 常驻，
+// 跨连接复用），若只写不删，上一次开启压缩时写入的 X-*-Accept-Encoding
+// 会一直残留，之后关闭压缩重连时仍会向服务端广告压缩，导致协商结果
+// 始终为开启（即使 CONFIG 已下发 compression=false）。
+func applyCompressionHeaders() {
+	if base.Cfg.Compression {
+		reqHeaders["X-CSTP-Accept-Encoding"] = "oc-lz4,lzs"
+		reqHeaders["X-DTLS-Accept-Encoding"] = "oc-lz4,lzs"
+	} else {
+		delete(reqHeaders, "X-CSTP-Accept-Encoding")
+		delete(reqHeaders, "X-DTLS-Accept-Encoding")
+	}
 }
 
 // SetupTunnel initiates an HTTP CONNECT command to establish a VPN
