@@ -195,7 +195,12 @@ func (_ *handler) Handle(ctx context.Context, conn *jsonrpc2.Conn, req *jsonrpc2
 		go monitor()
 	case DISCONNECT:
 		base.Debug("DISCONNECT")
-		if session.Sess.CSess != nil {
+		if autoReconnecting.Load() {
+			// 自动重连进行中（此时无活动会话）：置 ActiveClose 取消重连，
+			// startAutoReconnect 的退避循环检测到后立即退出
+			DisConnect()
+			_ = conn.Reply(ctx, req.ID, disconnectedStr)
+		} else if session.Sess.CSess != nil {
 			DisConnect()
 		} else {
 			jError := jsonrpc2.Error{Code: 1, Message: disconnectedStr}
