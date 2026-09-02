@@ -126,15 +126,26 @@ func SetRoutes(cSess *session.ConnSession) error {
 		return fmt.Errorf("invalid VPN server address: %w", err)
 	}
 
-	routes := []darwinRoute{
-		{
-			typ:     unix.RTM_ADD,
-			ifidx:   localIndex,
-			dst:     serverAddress,
-			gateway: localGateway,
-			name:    fmt.Sprintf("VPN server %s", serverAddress),
-		},
+	// 到 VPN 服务器的主机路由：重连时可能残留上一会话安装的旧网关路由（异常退出
+	// 未清理、或网络切换后网关已变化）。内核 ADD 对已存在的路由返回 EEXIST 并保留
+	// 旧条目，导致此后到服务器的 UDP/新建连接报 EADDRNOTAVAIL
+	// （macOS: can't assign requested address——正是 DTLS 发送失败的现象）。
+	// 因此先删后加，确保使用当前网关（路由不存在时 macOS 返回 ESRCH/no such
+	// process，会被 pipeline 容忍，见 pipelineLocked）。
+	serverRoute := darwinRoute{
+		typ:     unix.RTM_DELETE,
+		ifidx:   localIndex,
+		dst:     serverAddress,
+		gateway: localGateway,
+		name:    fmt.Sprintf("VPN server %s (replace)", serverAddress),
 	}
+	routes := []darwinRoute{serverRoute, {
+		typ:     unix.RTM_ADD,
+		ifidx:   localIndex,
+		dst:     serverAddress,
+		gateway: localGateway,
+		name:    fmt.Sprintf("VPN server %s", serverAddress),
+	}}
 
 	for _, ipMask := range cSess.SplitInclude {
 		dst, mask, parseErr := parseRoute(ipMask)
@@ -632,6 +643,13 @@ func (r *routeSocketState) pipelineLocked(routes []darwinRoute) error {
 				base.Debug("route already exists, skip:", request.route.name)
 				continue
 			}
+			if request.route.typ == unix.RTM_DELETE && (errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ESRCH)) {
+				// 删除不存在的路由是正常情况（macOS 直接以 ESRCH/no such process
+				// 或 ENOENT 从 write 返回，而非通过 ACK），跳过即可：
+				// SetRoutes 对 VPN 服务器主机路由先删后加，多数时候并没有旧路由可删
+				base.Debug("route not found, skip delete:", request.route.name)
+				continue
+			}
 			if len(written) > 0 {
 				results, collectErr := r.collectAcksLocked(written)
 				r.rollbackSuccessfulAddsLocked(written, results)
@@ -658,6 +676,11 @@ func (r *routeSocketState) pipelineLocked(routes []darwinRoute) error {
 		}
 		// 内核也可能通过 ACK 报告 EEXIST，同样视为成功
 		if request.route.typ == unix.RTM_ADD && errors.Is(routeErr, unix.EEXIST) {
+			continue
+		}
+		// 删除不存在的路由（ENOENT/ESRCH）视为成功：SetRoutes 对 VPN 服务器主机路由
+		// 先删后加，路由不存在时删除会返回 ENOENT（或 ESRCH），不应中断后续添加
+		if request.route.typ == unix.RTM_DELETE && (errors.Is(routeErr, unix.ENOENT) || errors.Is(routeErr, unix.ESRCH)) {
 			continue
 		}
 		if firstRouteError == nil {

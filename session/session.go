@@ -75,15 +75,15 @@ type ConnSession struct {
 	DTLSCipherSuite   string
 
 	// 压缩协商（X-CSTP-Content-Encoding / X-DTLS-Content-Encoding）
-	CSTPCompression  proto.Compression `json:"cstp_compression"`
-	DTLSCompression  proto.Compression `json:"dtls_compression"`
+	CSTPCompression proto.Compression `json:"cstp_compression"`
+	DTLSCompression proto.Compression `json:"dtls_compression"`
 
 	// 会话超时/租期（X-CSTP-Idle-Timeout / Lease-Duration / Session-Timeout）
 	IdleTimeout    int       `json:"idle_timeout"`
 	AuthExpiration time.Time `json:"auth_expiration"` // 会话到期时间（三者最小值+连接时刻）
 
-	Stat              *stat
-	CompressStat      *CompressStat `json:"compress_stat"` // 压缩统计，未协商压缩时为 null
+	Stat         *stat
+	CompressStat *CompressStat `json:"compress_stat"` // 压缩统计，未协商压缩时为 null
 
 	closeOnce      sync.Once           `json:"-"`
 	CloseChan      chan struct{}       `json:"-"`
@@ -324,16 +324,24 @@ func (cSess *ConnSession) Close() {
 			cSess.DSess.Close()
 		}
 		close(cSess.CloseChan)
-		Sess.CSess = nil
 
-		close(Sess.CloseChan)
+		// 只清理仍指向本会话的全局状态。自动重连时旧会话的清理可能延迟执行
+		//（例如 TLS 读卡在半个 TCP 连接上，网络恢复后才报错），若此时全局已
+		// 指向新会话，绝不能置空或关闭新会话的通道，否则会触发误 ABORT、
+		// 再次自动重连，并产生无人管理的孤儿会话（其 DTLS 通道会一直存活）。
+		if Sess.CSess == cSess {
+			Sess.CSess = nil
+			close(Sess.CloseChan)
+		}
 	})
 }
 
 func (dSess *DtlsSession) Close() {
 	dSess.closeOnce.Do(func() {
 		close(dSess.CloseChan)
-		if Sess.CSess != nil {
+		// 与 ConnSession.Close 同理：仅当全局会话仍持有本 DtlsSession 时才
+		// 修改其状态，避免旧会话的清理误清新会话的 DTLS 协商状态。
+		if Sess.CSess != nil && Sess.CSess.DSess == dSess {
 			Sess.CSess.DtlsConnected.Store(false)
 			Sess.CSess.DTLSCipherSuite = ""
 		}

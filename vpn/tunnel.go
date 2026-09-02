@@ -133,8 +133,11 @@ func SetupTunnel() error {
 	// 为了靠谱，不再异步设置，路由多的话可能要等等
 	err = vpnc.SetRoutes(cSess)
 	if err != nil {
+		// 注意：这里必须 return，否则会继续在已关闭的会话上启动通道，
+		// 表现为"协商成功"日志后立即全部退出（既有 bug，曾被路由错误触发）
 		auth.Conn.Close()
 		cSess.Close()
+		return err
 	}
 	base.Info("tls channel negotiation succeeded")
 
